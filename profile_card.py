@@ -37,6 +37,23 @@ def _circle_avatar(avatar, size):
     return avatar.resize((size, size), Image.LANCZOS)
 
 
+def _wrap_text(draw, text, font, max_width):
+    words = text.split()
+    lines = []
+    current = ""
+    for word in words:
+        test = f"{current} {word}".strip()
+        if draw.textlength(test, font=font) <= max_width:
+            current = test
+        else:
+            if current:
+                lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return "\n".join(lines)
+
+
 def _draw_stat_box(draw, x, y, w, h, label, value, value_color=ACCENT):
     draw.rounded_rectangle((x, y, x + w, y + h), radius=10, fill=STAT_BG)
     label_font = _font("light", 11)
@@ -58,7 +75,20 @@ def generate_profile_card(
     monthly_time: str,
 ) -> io.BytesIO:
     WIDTH = 600
-    HEIGHT = 380
+
+    tmp_img = Image.new("RGBA", (1, 1))
+    tmp_draw = ImageDraw.Draw(tmp_img)
+    quote_text_raw, quote_author = random_quote()
+    quote_font = _font("light", 13)
+    max_quote_w = WIDTH - 15 - 30 - 14 - 15
+    wrapped_quote = _wrap_text(tmp_draw, f'"{quote_text_raw}"', quote_font, max_quote_w)
+    quote_lines = wrapped_quote.count("\n") + 1
+    quote_box_h = 35 + quote_lines * 18 + 20
+
+    box_y = 155
+    box_h = 65
+    bar_y = box_y + box_h + 20
+    HEIGHT = bar_y + quote_box_h + 45
 
     img = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -103,8 +133,6 @@ def generate_profile_card(
     total_font = _font("black", 28)
     draw.text((WIDTH - 180, av_y + 28), total_time, font=total_font, fill=ACCENT)
 
-    box_y = 155
-    box_h = 65
     box_w = (WIDTH - 30 - 30) // 3
     gap = 15
 
@@ -112,18 +140,15 @@ def generate_profile_card(
     _draw_stat_box(draw, 15 + box_w + gap, box_y, box_w, box_h, "BEST SESSION", best_session)
     _draw_stat_box(draw, 15 + (box_w + gap) * 2, box_y, box_w, box_h, "THIS MONTH", monthly_time)
 
-    bar_y = box_y + box_h + 20
-    draw.rounded_rectangle((15, bar_y, WIDTH - 15, bar_y + 80), radius=12, fill=CARD_BG)
+    draw.rounded_rectangle((15, bar_y, WIDTH - 15, bar_y + quote_box_h), radius=12, fill=CARD_BG)
 
     quote_bar_x = 30
-    draw.rectangle((quote_bar_x, bar_y + 15, quote_bar_x + 2, bar_y + 65), fill=ACCENT)
+    draw.rectangle((quote_bar_x, bar_y + 15, quote_bar_x + 2, bar_y + quote_box_h - 15), fill=ACCENT)
 
-    quote_text, quote_author = random_quote()
-    quote_font = _font("light", 13)
-    draw.text((quote_bar_x + 14, bar_y + 18),
-              f'"{quote_text}"', font=quote_font, fill=TEXT_DIM)
+    draw.text((quote_bar_x + 14, bar_y + 18), wrapped_quote, font=quote_font, fill=TEXT_DIM)
+    attr_y = bar_y + 18 + quote_lines * 18
     attr_font = _font("light", 11)
-    draw.text((quote_bar_x + 14, bar_y + 42), f"— {quote_author}", font=attr_font, fill=(*ACCENT, 180))
+    draw.text((quote_bar_x + 14, attr_y), f"— {quote_author}", font=attr_font, fill=(*ACCENT, 180))
 
     footer_y = HEIGHT - 30
     footer_font = _font("light", 10)

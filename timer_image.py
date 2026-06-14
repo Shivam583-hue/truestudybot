@@ -28,6 +28,23 @@ def _font(name: str, size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(paths.get(name, paths["regular"]), size)
 
 
+def _wrap_text(draw, text, font, max_width):
+    words = text.split()
+    lines = []
+    current = ""
+    for word in words:
+        test = f"{current} {word}".strip()
+        if draw.textlength(test, font=font) <= max_width:
+            current = test
+        else:
+            if current:
+                lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return "\n".join(lines)
+
+
 def _draw_arc_ring(draw, center, radius, thickness, progress, color, bg_color):
     cx, cy = center
     bbox = (cx - radius, cy - radius, cx + radius, cy + radius)
@@ -40,10 +57,22 @@ def _draw_arc_ring(draw, center, radius, thickness, progress, color, bg_color):
 
 def generate_timer_image(phase, remaining, total, cycle, members):
     WIDTH = 500
-    HEIGHT = 500
     CENTER = (WIDTH // 2, 210)
     RING_RADIUS = 130
     RING_THICKNESS = 10
+
+    tmp = Image.new("RGBA", (1, 1))
+    td = ImageDraw.Draw(tmp)
+    name_font = _font("regular", 13)
+    if members:
+        parts = [f"{n} ({e})" for n, e in members[:6]]
+        ns = ", ".join(parts)
+        if len(members) > 6:
+            ns += f" +{len(members) - 6} more"
+        wrapped_lines = _wrap_text(td, ns, name_font, WIDTH - 80).count("\n") + 1
+    else:
+        wrapped_lines = 1
+    HEIGHT = CENTER[1] + RING_RADIUS + 50 + 15 + 25 + wrapped_lines * 20 + 10 + 30
 
     img = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -95,7 +124,6 @@ def generate_timer_image(phase, remaining, total, cycle, members):
     bottom_y += 25
 
     name_font = _font("regular", 13)
-    time_font = _font("light", 12)
     if members:
         display = members[:6]
         parts = []
@@ -104,11 +132,14 @@ def generate_timer_image(phase, remaining, total, cycle, members):
         names_str = ", ".join(parts)
         if len(members) > 6:
             names_str += f" +{len(members) - 6} more"
-        draw.text((40, bottom_y), names_str, font=name_font, fill=TEXT_WHITE)
+        wrapped = _wrap_text(draw, names_str, name_font, WIDTH - 80)
+        draw.text((40, bottom_y), wrapped, font=name_font, fill=TEXT_WHITE)
+        bottom_y += (wrapped.count("\n") + 1) * 20
     else:
         draw.text((40, bottom_y), "No one", font=name_font, fill=TEXT_DIM)
+        bottom_y += 20
 
-    bottom_y += 30
+    bottom_y += 10
     footer_font = _font("light", 11)
     ft = "Professor Moore is keeping an eye."
     fw = draw.textlength(ft, font=footer_font)

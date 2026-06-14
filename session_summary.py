@@ -27,6 +27,23 @@ def _font(name, size):
     return ImageFont.truetype(paths.get(name, paths["regular"]), size)
 
 
+def _wrap_text(draw, text, font, max_width):
+    words = text.split()
+    lines = []
+    current = ""
+    for word in words:
+        test = f"{current} {word}".strip()
+        if draw.textlength(test, font=font) <= max_width:
+            current = test
+        else:
+            if current:
+                lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return "\n".join(lines)
+
+
 def generate_session_summary(
     name: str,
     duration_str: str,
@@ -36,7 +53,14 @@ def generate_session_summary(
     streak: int,
 ) -> io.BytesIO:
     WIDTH = 500
-    HEIGHT = 280
+
+    tmp = Image.new("RGBA", (1, 1))
+    td = ImageDraw.Draw(tmp)
+    remark = _get_remark(duration_secs)
+    remark_font = _font("serif", 12)
+    wrapped_remark = _wrap_text(td, f"— {remark}", remark_font, WIDTH - 50)
+    remark_lines = wrapped_remark.count("\n") + 1
+    HEIGHT = 215 + remark_lines * 18 + 35
 
     img = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -80,9 +104,7 @@ def generate_session_summary(
         vw = draw.textlength(value, font=vf)
         draw.text((bx + box_w / 2 - vw / 2, box_y + 25), value, font=vf, fill=TEXT_WHITE)
 
-    remark = _get_remark(duration_secs)
-    remark_font = _font("serif", 12)
-    draw.text((25, box_y + box_h + 18), f"— {remark}", font=remark_font, fill=TEXT_DIM)
+    draw.text((25, box_y + box_h + 18), wrapped_remark, font=remark_font, fill=TEXT_DIM)
 
     footer_font = _font("light", 10)
     ft = "Professor Moore"
