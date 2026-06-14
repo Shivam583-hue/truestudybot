@@ -316,16 +316,23 @@ async def on_voice_state_update(
 
 
 async def _build_leaderboard(guild, period: str) -> discord.File:
+    now = datetime.now(timezone.utc)
     if period == "daily":
-        today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        today = now.replace(hour=0, minute=0, second=0, microsecond=0)
         since = today.timestamp()
         title = "STUDY TIME LEADERBOARD"
-        subtitle = f"TODAY: {datetime.now(timezone.utc).strftime('%B %d, %Y').upper()}  ·  SERVER: {guild.name.upper()}"
+        subtitle = f"TODAY: {now.strftime('%B %d, %Y').upper()}  ·  SERVER: {guild.name.upper()}"
+    elif period == "weekly":
+        start_of_week = now - timedelta(days=now.weekday())
+        start_of_week = start_of_week.replace(hour=0, minute=0, second=0, microsecond=0)
+        since = start_of_week.timestamp()
+        title = "STUDY TIME LEADERBOARD"
+        subtitle = f"THIS WEEK  ·  SERVER: {guild.name.upper()}"
     elif period == "monthly":
-        first_of_month = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        first_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         since = first_of_month.timestamp()
         title = "STUDY TIME LEADERBOARD"
-        month = datetime.now(timezone.utc).strftime("%B").upper()
+        month = now.strftime("%B").upper()
         subtitle = f"THIS MONTH: {month}  ·  SERVER: {guild.name.upper()}"
     else:
         since = 0
@@ -389,6 +396,11 @@ async def studytime(ctx: commands.Context, period: str = "all"):
     if period == "daily":
         today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         since, label = today.timestamp(), "Today"
+    elif period == "weekly":
+        now = datetime.now(timezone.utc)
+        start = now - timedelta(days=now.weekday())
+        start = start.replace(hour=0, minute=0, second=0, microsecond=0)
+        since, label = start.timestamp(), "This Week"
     elif period == "monthly":
         first = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         since, label = first.timestamp(), "This Month"
@@ -409,10 +421,11 @@ async def pomodoro_status(ctx: commands.Context):
 
 
 @bot.tree.command(name="leaderboard", description="Show the study leaderboard")
-@app_commands.describe(period="Time period: all, daily, or monthly")
+@app_commands.describe(period="Time period: all, daily, weekly, or monthly")
 @app_commands.choices(period=[
     app_commands.Choice(name="All Time", value="all"),
     app_commands.Choice(name="Daily", value="daily"),
+    app_commands.Choice(name="Weekly", value="weekly"),
     app_commands.Choice(name="Monthly", value="monthly"),
 ])
 async def slash_leaderboard(interaction: discord.Interaction, period: app_commands.Choice[str] = None):
@@ -423,10 +436,11 @@ async def slash_leaderboard(interaction: discord.Interaction, period: app_comman
 
 
 @bot.tree.command(name="studytime", description="Check your study time")
-@app_commands.describe(period="Time period: all, daily, or monthly")
+@app_commands.describe(period="Time period: all, daily, weekly, or monthly")
 @app_commands.choices(period=[
     app_commands.Choice(name="All Time", value="all"),
     app_commands.Choice(name="Daily", value="daily"),
+    app_commands.Choice(name="Weekly", value="weekly"),
     app_commands.Choice(name="Monthly", value="monthly"),
 ])
 async def slash_studytime(interaction: discord.Interaction, period: app_commands.Choice[str] = None):
@@ -434,6 +448,11 @@ async def slash_studytime(interaction: discord.Interaction, period: app_commands
     if p == "daily":
         today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         since, label = today.timestamp(), "Today"
+    elif p == "weekly":
+        now = datetime.now(timezone.utc)
+        start = now - timedelta(days=now.weekday())
+        start = start.replace(hour=0, minute=0, second=0, microsecond=0)
+        since, label = start.timestamp(), "This Week"
     elif p == "monthly":
         first = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         since, label = first.timestamp(), "This Month"
@@ -538,8 +557,8 @@ HELP_TEXT = (
     "## Professor Moore\n"
     "*Greetings. I am Prof. Jonathan Moore, your study companion.*\n\n"
     "**Commands** (prefix `!` or `/`)\n"
-    "` leaderboard [all|daily|monthly] ` — Study time rankings\n"
-    "` studytime [all|daily|monthly] ` — Your personal study time\n"
+    "` leaderboard [all|daily|weekly|monthly] ` — Study time rankings\n"
+    "` studytime [all|daily|weekly|monthly] ` — Your personal study time\n"
     "` profile [@user] ` — Student profile card\n"
     "` pomodoro ` — Current focus timer status\n"
     "` history [@user] ` — Recent session history\n"
