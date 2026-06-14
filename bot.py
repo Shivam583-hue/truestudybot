@@ -116,7 +116,14 @@ def _make_view(color: int, *text_blocks: str, footer: str = "Professor Moore") -
 
 
 def _make_timer_file(phase: str, remaining: float, total: float, cycle: int, vc) -> discord.File:
-    members = [m.display_name for m in (vc.members if vc else []) if not m.bot]
+    members = []
+    now = time.time()
+    for m in (vc.members if vc else []):
+        if m.bot:
+            continue
+        join_time = database.get_active_join_time(m.id)
+        elapsed = format_duration(now - join_time) if join_time else "0s"
+        members.append((m.display_name, elapsed))
     buf = timer_image.generate_timer_image(phase, remaining, total, cycle, members)
     return discord.File(buf, filename="timer.png")
 

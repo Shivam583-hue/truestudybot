@@ -94,9 +94,14 @@ def generate_timer_image(phase, remaining, total, cycle, members):
     draw.text((40, bottom_y), f"In Session ({count})", font=header_font, fill=TEXT_DIM)
     bottom_y += 25
 
-    name_font = _font("regular", 14)
+    name_font = _font("regular", 13)
+    time_font = _font("light", 12)
     if members:
-        names_str = ", ".join(members[:6])
+        display = members[:6]
+        parts = []
+        for name, elapsed in display:
+            parts.append(f"{name} ({elapsed})")
+        names_str = ", ".join(parts)
         if len(members) > 6:
             names_str += f" +{len(members) - 6} more"
         draw.text((40, bottom_y), names_str, font=name_font, fill=TEXT_WHITE)

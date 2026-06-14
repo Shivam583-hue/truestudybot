@@ -146,6 +146,16 @@ def get_study_streak(user_id: int) -> int:
     return streak
 
 
+def get_active_join_time(user_id: int) -> float | None:
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT join_time FROM study_sessions WHERE user_id = ? AND leave_time IS NULL ORDER BY id DESC LIMIT 1",
+        (user_id,),
+    ).fetchone()
+    conn.close()
+    return row[0] if row else None
+
+
 def get_recent_sessions(user_id: int, limit: int = 10) -> list[tuple[float, float]]:
     conn = get_connection()
     rows = conn.execute(
