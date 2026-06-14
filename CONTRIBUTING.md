@@ -21,7 +21,6 @@ Thanks for your interest in contributing. Here's how to get started.
 
 ### Code Style
 
-- No comments unless the logic is genuinely non-obvious
 - No docstrings, type annotations on simple functions, or unnecessary abstractions
 - Keep it simple. Three similar lines are better than a premature helper function.
 - Follow the existing patterns in the codebase

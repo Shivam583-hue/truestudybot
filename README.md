@@ -96,8 +96,4 @@ requirements.txt    — Python dependencies
 - **SQLite** with WAL journal mode
 - **aiohttp** for fetching Discord avatars
 
-## Credits
-
-Created by **Ryuga**.
-
 *"That voice in your head that says you can't do it is a liar."* — Prof. Moore
