@@ -1,8 +1,10 @@
 import sqlite3
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import config
+
+LIVE_DUR = "CASE WHEN leave_time IS NULL THEN ? - join_time ELSE duration END"
 
 
 def get_connection():
@@ -60,27 +62,30 @@ def end_session(user_id: int) -> float:
 
 
 def get_leaderboard(since: float = 0) -> list[tuple[int, float]]:
+    now = time.time()
     conn = get_connection()
     rows = conn.execute(
-        """
-        SELECT user_id, SUM(duration) as total
+        f"""
+        SELECT user_id, SUM({LIVE_DUR}) as total
         FROM study_sessions
-        WHERE duration > 0 AND join_time >= ?
+        WHERE join_time >= ?
         GROUP BY user_id
+        HAVING total > 0
         ORDER BY total DESC
         LIMIT 10
         """,
-        (since,),
+        (now, since),
     ).fetchall()
     conn.close()
     return rows
 
 
 def get_user_total(user_id: int, since: float = 0) -> float:
+    now = time.time()
     conn = get_connection()
     row = conn.execute(
-        "SELECT COALESCE(SUM(duration), 0) FROM study_sessions WHERE user_id = ? AND duration > 0 AND join_time >= ?",
-        (user_id, since),
+        f"SELECT COALESCE(SUM({LIVE_DUR}), 0) FROM study_sessions WHERE user_id = ? AND join_time >= ?",
+        (now, user_id, since),
     ).fetchone()
     conn.close()
     return row[0]
@@ -89,7 +94,7 @@ def get_user_total(user_id: int, since: float = 0) -> float:
 def get_session_count(user_id: int, since: float = 0) -> int:
     conn = get_connection()
     row = conn.execute(
-        "SELECT COUNT(*) FROM study_sessions WHERE user_id = ? AND duration > 0 AND join_time >= ?",
+        "SELECT COUNT(*) FROM study_sessions WHERE user_id = ? AND join_time >= ?",
         (user_id, since),
     ).fetchone()
     conn.close()
@@ -97,25 +102,28 @@ def get_session_count(user_id: int, since: float = 0) -> int:
 
 
 def get_best_session(user_id: int) -> float:
+    now = time.time()
     conn = get_connection()
     row = conn.execute(
-        "SELECT COALESCE(MAX(duration), 0) FROM study_sessions WHERE user_id = ? AND duration > 0",
-        (user_id,),
+        f"SELECT COALESCE(MAX({LIVE_DUR}), 0) FROM study_sessions WHERE user_id = ?",
+        (now, user_id),
     ).fetchone()
     conn.close()
     return row[0]
 
 
 def get_user_rank(user_id: int, since: float = 0) -> int:
+    now = time.time()
     conn = get_connection()
     rows = conn.execute(
-        """
+        f"""
         SELECT user_id FROM study_sessions
-        WHERE duration > 0 AND join_time >= ?
+        WHERE join_time >= ?
         GROUP BY user_id
-        ORDER BY SUM(duration) DESC
+        HAVING SUM({LIVE_DUR}) > 0
+        ORDER BY SUM({LIVE_DUR}) DESC
         """,
-        (since,),
+        (since, now, now),
     ).fetchall()
     conn.close()
     for i, (uid,) in enumerate(rows):
@@ -127,7 +135,7 @@ def get_user_rank(user_id: int, since: float = 0) -> int:
 def get_study_streak(user_id: int) -> int:
     conn = get_connection()
     rows = conn.execute(
-        "SELECT DISTINCT DATE(join_time, 'unixepoch') as d FROM study_sessions WHERE user_id = ? AND duration > 0 ORDER BY d DESC",
+        "SELECT DISTINCT DATE(join_time, 'unixepoch') as d FROM study_sessions WHERE user_id = ? ORDER BY d DESC",
         (user_id,),
     ).fetchall()
     conn.close()
@@ -140,7 +148,7 @@ def get_study_streak(user_id: int) -> int:
         if d == expected:
             streak += 1
             prev = datetime.strptime(expected, "%Y-%m-%d")
-            expected = (prev - __import__("datetime").timedelta(days=1)).strftime("%Y-%m-%d")
+            expected = (prev - timedelta(days=1)).strftime("%Y-%m-%d")
         elif d < expected:
             break
     return streak
@@ -157,10 +165,11 @@ def get_active_join_time(user_id: int) -> float | None:
 
 
 def get_recent_sessions(user_id: int, limit: int = 10) -> list[tuple[float, float]]:
+    now = time.time()
     conn = get_connection()
     rows = conn.execute(
-        "SELECT join_time, duration FROM study_sessions WHERE user_id = ? AND duration > 0 ORDER BY join_time DESC LIMIT ?",
-        (user_id, limit),
+        f"SELECT join_time, {LIVE_DUR} as dur FROM study_sessions WHERE user_id = ? ORDER BY join_time DESC LIMIT ?",
+        (now, user_id, limit),
     ).fetchall()
     conn.close()
     return rows
