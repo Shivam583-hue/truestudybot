@@ -36,11 +36,7 @@ async def rotate_status():
     await bot.change_presence(activity=next(STATUS_CYCLE))
 
 
-guild_pomodoro: dict[int, dict] = {}
-
 COLORS = {
-    "work": 0x2D7D46,
-    "break": 0x3B82F6,
     "join": 0x8B5CF6,
     "leave": 0xEF4444,
     "stop": 0x6B7280,
@@ -60,12 +56,6 @@ def format_duration(seconds: float) -> str:
     return f"{s}s"
 
 
-def format_clock(seconds: float) -> str:
-    seconds = int(max(0, seconds))
-    m, s = divmod(seconds, 60)
-    return f"{m:02d}:{s:02d}"
-
-
 def _get_guild_config(guild_id: int) -> dict | None:
     return database.get_server_config(guild_id)
 
@@ -75,16 +65,6 @@ def _get_study_vc(guild: discord.Guild) -> discord.VoiceChannel | None:
     if cfg is None:
         return None
     return bot.get_channel(cfg["study_vc_id"])
-
-
-def _get_pomo(guild_id: int) -> dict:
-    if guild_id not in guild_pomodoro:
-        guild_pomodoro[guild_id] = {
-            "task": None,
-            "phase": "idle",
-            "end_time": 0.0,
-        }
-    return guild_pomodoro[guild_id]
 
 
 async def get_or_create_role(guild: discord.Guild) -> discord.Role:
@@ -117,114 +97,23 @@ def _make_view(color: int, *text_blocks: str, footer: str = "Professor Moore") -
     return view
 
 
-def _make_timer_file(phase: str, remaining: float, total: float, cycle: int, vc, guild_id: int) -> discord.File:
+def _make_focus_file(vc, guild_id: int) -> discord.File:
     members = []
     now = time.time()
+    oldest_join = now
     for m in (vc.members if vc else []):
         if m.bot:
             continue
         join_time = database.get_active_join_time(m.id, guild_id)
-        elapsed = format_duration(now - join_time) if join_time else "0s"
+        if join_time:
+            oldest_join = min(oldest_join, join_time)
+            elapsed = format_duration(now - join_time)
+        else:
+            elapsed = "0s"
         members.append((m.display_name, elapsed))
-    buf = timer_image.generate_timer_image(phase, remaining, total, cycle, members)
-    return discord.File(buf, filename="timer.png")
-
-
-async def pomodoro_loop(guild_id: int, vc_id: int):
-    pomo = _get_pomo(guild_id)
-    cycle = 0
-
-    while True:
-        cycle += 1
-
-        pomo["phase"] = "work"
-        total_seconds = config.POMODORO_WORK * 60
-        pomo["end_time"] = time.time() + total_seconds
-
-        channel = bot.get_channel(vc_id)
-        if channel:
-            vc = bot.get_channel(vc_id)
-            file = _make_timer_file("work", total_seconds, total_seconds, cycle, vc, guild_id)
-            timer_msg = await channel.send(file=file)
-
-            for _ in range(60, total_seconds, 60):
-                await asyncio.sleep(60)
-                remaining = max(0, pomo["end_time"] - time.time())
-                vc = bot.get_channel(vc_id)
-                file = _make_timer_file("work", remaining, total_seconds, cycle, vc, guild_id)
-                await timer_msg.edit(attachments=[file])
-
-            remaining = max(0, pomo["end_time"] - time.time())
-            if remaining > 0:
-                await asyncio.sleep(remaining)
-
-            done_buf = timer_image.generate_timer_complete_image("work", cycle, f"{config.POMODORO_WORK}:00")
-            done_file = discord.File(done_buf, filename="timer.png")
-            await timer_msg.edit(attachments=[done_file])
-        else:
-            await asyncio.sleep(total_seconds)
-
-        study_vc = bot.get_channel(vc_id)
-        if not study_vc or len([m for m in study_vc.members if not m.bot]) == 0:
-            break
-
-        pomo["phase"] = "break"
-        total_seconds = config.POMODORO_BREAK * 60
-        pomo["end_time"] = time.time() + total_seconds
-
-        channel = bot.get_channel(vc_id)
-        if channel:
-            vc = bot.get_channel(vc_id)
-            file = _make_timer_file("break", total_seconds, total_seconds, cycle, vc, guild_id)
-            break_msg = await channel.send(file=file)
-
-            for _ in range(60, total_seconds, 60):
-                await asyncio.sleep(60)
-                remaining = max(0, pomo["end_time"] - time.time())
-                vc = bot.get_channel(vc_id)
-                file = _make_timer_file("break", remaining, total_seconds, cycle, vc, guild_id)
-                await break_msg.edit(attachments=[file])
-
-            remaining = max(0, pomo["end_time"] - time.time())
-            if remaining > 0:
-                await asyncio.sleep(remaining)
-
-            done_buf = timer_image.generate_timer_complete_image("break", cycle, f"{config.POMODORO_BREAK}:00")
-            done_file = discord.File(done_buf, filename="timer.png")
-            await break_msg.edit(attachments=[done_file])
-        else:
-            await asyncio.sleep(total_seconds)
-
-        study_vc = bot.get_channel(vc_id)
-        if not study_vc or len([m for m in study_vc.members if not m.bot]) == 0:
-            break
-
-    pomo["phase"] = "idle"
-    pomo["end_time"] = 0.0
-
-
-def start_pomodoro(guild_id: int, vc_id: int):
-    pomo = _get_pomo(guild_id)
-    if pomo["task"] is None or pomo["task"].done():
-        pomo["task"] = asyncio.create_task(pomodoro_loop(guild_id, vc_id))
-
-
-def stop_pomodoro(guild_id: int):
-    pomo = _get_pomo(guild_id)
-    if pomo["task"] and not pomo["task"].done():
-        pomo["task"].cancel()
-    pomo["task"] = None
-    pomo["phase"] = "idle"
-    pomo["end_time"] = 0.0
-
-
-def _is_study_vc(channel, guild_id: int) -> bool:
-    if channel is None:
-        return False
-    cfg = _get_guild_config(guild_id)
-    if cfg is None:
-        return False
-    return channel.id == cfg["study_vc_id"]
+    total_elapsed = now - oldest_join if members else 0
+    buf = timer_image.generate_focus_image(total_elapsed, members)
+    return discord.File(buf, filename="focus.png")
 
 
 @bot.event
@@ -263,7 +152,6 @@ async def on_voice_state_update(
     )
 
     channel = bot.get_channel(vc_id)
-    pomo = _get_pomo(guild_id)
 
     if joined_study:
         try:
@@ -274,28 +162,8 @@ async def on_voice_state_update(
 
         database.start_session(member.id, guild_id)
 
-        study_vc = bot.get_channel(vc_id)
-        human_count = len([m for m in study_vc.members if not m.bot]) if study_vc else 0
-        first_person = human_count == 1
-
-        if first_person:
-            start_pomodoro(guild_id, vc_id)
-
         if channel:
-            if first_person:
-                await channel.send(f"{member.mention} started a study session.")
-            else:
-                remaining = max(0, pomo["end_time"] - time.time())
-                phase_label = "Focus" if pomo["phase"] == "work" else "Break"
-                await channel.send(f"{member.mention} joined the study session.")
-                view = _make_view(
-                    COLORS["join"],
-                    "## JOINED SESSION",
-                    "*Welcome in. Stay locked.*",
-                    "---",
-                    f"**Phase:** {phase_label}  ·  **Remaining:** {format_clock(remaining)}",
-                )
-                await channel.send(view=view)
+            await channel.send(f"{member.mention} joined the study session.")
 
     if left_study:
         try:
@@ -327,12 +195,11 @@ async def on_voice_state_update(
         study_vc = bot.get_channel(vc_id)
         human_count = len([m for m in study_vc.members if not m.bot]) if study_vc else 0
         if human_count == 0:
-            stop_pomodoro(guild_id)
             if channel:
                 view = _make_view(
                     COLORS["stop"],
                     "## SESSION ENDED",
-                    "*Study VC is empty. Pomodoro timer stopped.*",
+                    "*Study VC is empty.*",
                 )
                 await channel.send(view=view)
 
@@ -396,19 +263,16 @@ def _studytime_view(user_id: int, guild_id: int, user_name: str, total: float, l
     )
 
 
-def _pomodoro_response(guild: discord.Guild):
-    pomo = _get_pomo(guild.id)
-    if pomo["phase"] == "idle":
+def _focus_response(guild: discord.Guild):
+    vc = _get_study_vc(guild)
+    if not vc or len([m for m in vc.members if not m.bot]) == 0:
         view = _make_view(
             COLORS["stop"],
-            "## Pomodoro Status",
-            "*No session running. Join the study VC to start one.*",
+            "## Focus Session",
+            "*No one is studying right now. Join the study VC to start.*",
         )
         return view, None
-    remaining = max(0, pomo["end_time"] - time.time())
-    total = config.POMODORO_WORK * 60 if pomo["phase"] == "work" else config.POMODORO_BREAK * 60
-    vc = _get_study_vc(guild)
-    file = _make_timer_file(pomo["phase"], remaining, total, 0, vc, guild.id)
+    file = _make_focus_file(vc, guild.id)
     return None, file
 
 
@@ -427,9 +291,9 @@ async def studytime(ctx: commands.Context, period: str = "all"):
     await ctx.send(view=view)
 
 
-@bot.command(name="pomodoro", aliases=["pomo"])
-async def pomodoro_status(ctx: commands.Context):
-    view, file = _pomodoro_response(ctx.guild)
+@bot.command(name="focus", aliases=["f"])
+async def cmd_focus(ctx: commands.Context):
+    view, file = _focus_response(ctx.guild)
     if view:
         await ctx.send(view=view)
     else:
@@ -465,6 +329,15 @@ async def slash_studytime(interaction: discord.Interaction, period: app_commands
     total = database.get_user_total(interaction.user.id, interaction.guild.id, since)
     view = _studytime_view(interaction.user.id, interaction.guild.id, interaction.user.display_name, total, label)
     await interaction.response.send_message(view=view)
+
+
+@bot.tree.command(name="focus", description="See who's studying and how long they've been at it")
+async def slash_focus(interaction: discord.Interaction):
+    view, file = _focus_response(interaction.guild)
+    if view:
+        await interaction.response.send_message(view=view)
+    else:
+        await interaction.response.send_message(file=file)
 
 
 async def _build_profile(member: discord.Member) -> discord.File:
@@ -506,15 +379,6 @@ async def slash_profile(interaction: discord.Interaction, member: discord.Member
     await interaction.response.defer()
     file = await _build_profile(member)
     await interaction.followup.send(file=file)
-
-
-@bot.tree.command(name="pomodoro", description="Check current pomodoro timer status")
-async def slash_pomodoro(interaction: discord.Interaction):
-    view, file = _pomodoro_response(interaction.guild)
-    if view:
-        await interaction.response.send_message(view=view)
-    else:
-        await interaction.response.send_message(file=file)
 
 
 def _history_view(member: discord.Member) -> discord.ui.LayoutView:
@@ -589,13 +453,13 @@ HELP_TEXT = (
     "` leaderboard [all|daily|weekly|monthly] ` — Study time rankings\n"
     "` studytime [all|daily|weekly|monthly] ` — Your personal study time\n"
     "` profile [@user] ` — Student profile card\n"
-    "` pomodoro ` — Current focus timer status\n"
+    "` focus ` — See who's studying right now\n"
     "` history [@user] ` — Recent session history\n"
     "` help ` — This message\n\n"
     "**How it works**\n"
     "An admin runs `/setup` to pick the study voice channel. "
-    "Join it and I will track your time, assign the Studying role, "
-    "and run a 50/10 Pomodoro cycle automatically. Stay focused."
+    "Join it and I will track your time and assign the Studying role. "
+    "Use `/focus` to see the current session. Stay focused."
 )
 
 
