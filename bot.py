@@ -36,6 +36,51 @@ async def rotate_status():
     await bot.change_presence(activity=next(STATUS_CYCLE))
 
 
+guild_focus: dict[int, dict] = {}
+
+
+def _get_focus(guild_id: int) -> dict:
+    if guild_id not in guild_focus:
+        guild_focus[guild_id] = {"task": None, "msg": None}
+    return guild_focus[guild_id]
+
+
+async def _focus_loop(guild_id: int, vc_id: int):
+    focus = _get_focus(guild_id)
+    channel = bot.get_channel(vc_id)
+    if not channel:
+        return
+
+    vc = bot.get_channel(vc_id)
+    file = _make_focus_file(vc, guild_id)
+    focus["msg"] = await channel.send(file=file)
+
+    while True:
+        await asyncio.sleep(60)
+        vc = bot.get_channel(vc_id)
+        if not vc or len([m for m in vc.members if not m.bot]) == 0:
+            break
+        file = _make_focus_file(vc, guild_id)
+        try:
+            await focus["msg"].edit(attachments=[file])
+        except discord.NotFound:
+            focus["msg"] = await channel.send(file=file)
+
+
+def _start_focus(guild_id: int, vc_id: int):
+    focus = _get_focus(guild_id)
+    if focus["task"] is None or focus["task"].done():
+        focus["task"] = asyncio.create_task(_focus_loop(guild_id, vc_id))
+
+
+def _stop_focus(guild_id: int):
+    focus = _get_focus(guild_id)
+    if focus["task"] and not focus["task"].done():
+        focus["task"].cancel()
+    focus["task"] = None
+    focus["msg"] = None
+
+
 COLORS = {
     "join": 0x8B5CF6,
     "leave": 0xEF4444,
@@ -162,8 +207,14 @@ async def on_voice_state_update(
 
         database.start_session(member.id, guild_id)
 
+        study_vc = bot.get_channel(vc_id)
+        human_count = len([m for m in study_vc.members if not m.bot]) if study_vc else 0
+
         if channel:
             await channel.send(f"{member.mention} joined the study session.")
+
+        if human_count == 1:
+            _start_focus(guild_id, vc_id)
 
     if left_study:
         try:
@@ -195,6 +246,7 @@ async def on_voice_state_update(
         study_vc = bot.get_channel(vc_id)
         human_count = len([m for m in study_vc.members if not m.bot]) if study_vc else 0
         if human_count == 0:
+            _stop_focus(guild_id)
             if channel:
                 view = _make_view(
                     COLORS["stop"],
