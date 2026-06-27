@@ -4,6 +4,15 @@ A premium Discord study bot with a dark academia aesthetic. Professor Moore moni
 
 ![Demo](demo.gif)
 
+## Invite link 
+
+
+<p align="center">
+  <samp>
+    <a href="https://discord.com/oauth2/authorize?client_id=1515700960071123064">Invite link</a> 
+  </samp>
+</p>
+
 ## Features
 
 - **Automatic Tracking** — Join a study VC and your time is tracked. Leave and get a session summary card.
